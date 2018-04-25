@@ -1,7 +1,8 @@
 import ply.lex as lex
 from nltk import ngrams
 import collections
-# List of token names.   This is always required
+import gensim
+# List of token names
 tokens = (
    'LINE_COMMENT',
    'AREA_COMMENT',
@@ -33,7 +34,6 @@ def t_AREA_COMMENT_CONTINUE(t):
     r'\/\*([^*]|\*(?!\/))*\*'
     return t
 
-# A regular expression rule with some action code
 def t_NUMBER(t):
     r'\d+'
     t.value = int(t.value)
@@ -83,15 +83,6 @@ t_ignore  = ' \t'
 def t_error(t):
     #print("Illegal character '%s'" % t.value[0])
     t.lexer.skip(1)
-
-# Build the lexer
-#lexer = lex.lex()
-
-# Test it out
-#data = open('test.cpp', 'r').read()
-
-# Give the lexer some input
-#lexer.input(data)
 
 cpp_keywords = {
     "alignas",
@@ -194,6 +185,7 @@ cpp_keywords = {
 }
 
 lexer = lex.lex()
+
 def get_freqs_from_cpp_source(source):
     lexer.input(source)
     freqs = {}
@@ -209,7 +201,8 @@ def get_freqs_from_cpp_source(source):
     return freqs
 
 def valid_token(tok):
-    return (tok.type == 'IDENTIFIER' and tok.value in cpp_keywords) or tok.type == 'OPEN_CURLY' or tok.type == 'CLOSE_CURLY'
+#    return (tok.type == 'IDENTIFIER' and tok.value in cpp_keywords) or tok.type == 'OPEN_CURLY' or tok.type == 'CLOSE_CURLY'
+    return tok.type == 'IDENTIFIER' or tok.type == 'OPEN_CURLY' or tok.type == 'CLOSE_CURLY' or tok.type == 'OPERATOR'
 
 def get_keywords(source):
     lexer.input(source)
@@ -221,13 +214,10 @@ def get_keywords(source):
             ans.append(tok.value)
     return ans
 
-#print(cpp_keywords)
 cpp_keyword_ngrams = {}
 
 def make_ngram_dict(n, ngram):
     if n == 0:
-        #print(ngram)
-        #print(len(cpp_keyword_ngrams))
         cpp_keyword_ngrams[tuple(ngram)] = 0
         return
 
@@ -236,17 +226,10 @@ def make_ngram_dict(n, ngram):
         cp.append(j)
         make_ngram_dict(n - 1, cp)
 
-#print(cpp_keyword_ngrams)
-def get_ngram(n, source):
-    if len(cpp_keyword_ngrams) == 0:
-        make_ngram_dict(n, [])
-        print(len(cpp_keyword_ngrams))
-    else:
-        for key in cpp_keyword_ngrams.keys():
-            cpp_keyword_ngrams[key] = 0
-    #print(cpp_keyword_ngrams)
-    lexer.input(source)
 
+def get_ngram_list(source, n):
+    ans = []
+    lexer.input(source)    
     ngram_buffer = []
     i = 0
     while i < n:
@@ -261,45 +244,35 @@ def get_ngram(n, source):
         print(ngram_buffer)
         raise "Error" #todo: add errors
 
-    cpp_keyword_ngrams[tuple(ngram_buffer)] += 1
+    ans.append(tuple(ngram_buffer))
     while True:
         tok = lexer.token()
         if not tok: break
         if valid_token(tok):
-            cpp_keyword_ngrams[tuple(ngram_buffer)] += 1
+            ans.append(tuple(ngram_buffer))
             del ngram_buffer[0]
-            ngram_buffer.append(tok.value)            
+            ngram_buffer.append(tok.value)
+    return ans
 
-    #print(cpp_keyword_ngrams)
-    #ngram = ngrams(source, n)
-    #print(ngram)
-    #for gram in ngram:
-    #    print(gram)
-    #    valid_ngram = True
-        #for i in gram:
-        #    print(i)
-         #   if i not in cpp_keywords:
-         #       valid_ngram = False
-         #       break
-    #    if valid_ngram:
-    #        cpp_keyword_ngrams[gram] += 1
-
-    #open('log.log', 'w').write(str(cpp_keyword_ngrams))
-    return cpp_keyword_ngrams #todo: change
-
-#get_ngram(2, "test.cpp")
+def get_ngram(source, model, n):
+    ngram_dict = dict.fromkeys(model, 0)
+    for g in get_ngram_list(source, n):
+        ngram_dict[g] += 1
+    return ngram_dict #todo: change
 
 
-#freqs = {}
-#for keyword in cpp_keywords:
-#    freqs[keyword] = 0
+def get_ngram_model(path, files, n): #todo: remove path
+    ngram_set = set()
+    for f in files:
+        for g in get_ngram_list(open(path + f, 'r').read(), n):
+            if g not in ngram_set:
+                ngram_set.add(g)
 
-# Tokenize
-#while True:
-#    tok = lexer.token()
-#    if not tok: break      # No more input
-#    if tok.type == 'IDENTIFIER' and tok.value in cpp_keywords:
-#        freqs[tok.value] += 1
-#        print(tok)
-#
-#print(freqs)
+    return ngram_set
+
+def get_word2vec_model(path, files, size): #todo: remove path
+    data = []
+    for f in files:
+        data.append(get_keywords(open(path + f, 'r').read()))
+    print(data)
+    return gensim.models.Word2Vec(data, size=size)

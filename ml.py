@@ -1,17 +1,14 @@
 #import tensorflow as tf
-from os import listdir
-from os.path import isfile, join
 import matplotlib.pyplot as plt
-import random
-#from lex import lexer, cpp_keywords
+#import random
 import lex
 import itertools
-from collections import OrderedDict
+import feature_extractor
 
 import numpy as np
 
 from matplotlib.colors import ListedColormap
-from sklearn.model_selection import train_test_split
+#from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.datasets import make_moons, make_circles, make_classification
 from sklearn.neural_network import MLPClassifier
@@ -25,17 +22,10 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import confusion_matrix
-from sklearn.feature_selection import VarianceThreshold
 
 def get_freqs(full_filename_path):
-    #print(full_filename_path)
     source = open(full_filename_path, 'r').read()
     ordered = OrderedDict(lex.get_freqs_from_cpp_source(source))
-    #tmp = lex.get_ngram(1, source)
-    #print(tmp)
-    #ordered = OrderedDict(tmp)
-    #print(ordered)
-    #print("---------------")
     return list(ordered.values())
 
 def get_ngrams(full_filename_path, n):
@@ -44,94 +34,47 @@ def get_ngrams(full_filename_path, n):
     ordered = OrderedDict(tmp)
     return list(ordered.values())
 
-TRAINING_PART = 0.75
+
+TRAINING_PART = 1.0
 
 #path = "spb-2017/"
 #path = "north-2015-runs/"
 path = "north-2011-runs/"
 
-onlyfiles = [ f for f in listdir(path) if isfile(join(path, f)) ]
+feature_ext = feature_extractor.Word2VecExtractor(path_to_sources=path, training_part=TRAINING_PART, size=50)
+#feature_ext = feature_extractor.NgramExtractor(path_to_sources=path, training_part=TRAINING_PART, n=1,
+#                                               scale_features=False, variance_threshold=False)
 
-cppfiles = list(filter(lambda x : x[-3:] == "cpp", onlyfiles))
-#cppfiles = cppfiles[:2] #filter
-file_to_task = {}
-for f in cppfiles:
-    file_to_task[f] = f[4]
-
-data_len = len(cppfiles)
-random.shuffle(cppfiles)
-if TRAINING_PART < 1:
-    training_data, test_data = train_test_split(cppfiles, train_size=TRAINING_PART)
-else:
-    training_data = cppfiles
-    test_data = []
-
-#training_data = cppfiles[:int(len(cppfiles)*TRAINING_PART)]
-#test_data = cppfiles[-data_len+len(training_data):]
-
-print(len(training_data))
-
-print(len(test_data))
-
-def get_features(path):
-    return get_ngrams(path, 1)
-    #return get_freqs(path)
-
-X = []
 y = []
-print("Training data")
-for f in training_data:
-    print(f)
-    X.append(get_features(path + f))
+
+for f in feature_ext.training_data:
     y.append(f[4])
 
-X_test = []
 y_test = []
 
-print("Test data")
-for f in test_data:
-    print(f)
-    X_test.append(get_features(path + f))
+for f in feature_ext.test_data:
     y_test.append(f[4])
 
-scaler = StandardScaler()
-scaler.fit(X + X_test)
-
-#scaler = StandardScaler()
-#scaler.fit(X_test)
-
-X = scaler.transform(X)
-
-print(X)
-
-if len(X_test) > 0:
-    X_test = scaler.transform(X_test)
-    #print(X_test)
-
-sel = VarianceThreshold()
-if len(X_test) > 0:
-    sel.fit(np.concatenate((X, X_test)))
-else:
-    sel.fit(X, X_test)
-
-X = sel.transform(X)
-print(X.shape)
-if len(X_test) > 0:
-    X_test = sel.transform(X_test)
-
-names = [ #"Linear SVM", "Decision Tree",
-        "Random Forest", "Neural Net lbfgs",
-        #"Neural Net adam", "Neural Net sgd"
-        ]
-
-classifiers = [
-        SVC(kernel="linear", C=0.025),
-        DecisionTreeClassifier(),
-        RandomForestClassifier(max_features=None),
-        MLPClassifier(solver="lbfgs", max_iter=5000, alpha=0.3),
-        MLPClassifier(solver="adam", max_iter=5000, alpha=0.3),
-        MLPClassifier(solver="sgd", max_iter=5000, alpha=0.3),
+classifier_names = [ 
+      #"Linear SVM",
+      #"Decision Tree",
+      "Random Forest",
+      "Neural Net lbfgs",
+      #"Neural Net adam",
+      #"Neural Net sgd",
+      "KNeighborsClassifier",
+      "NN 2 hidden layers", 
     ]
+
+classifiers = { "Linear SVM" : SVC(kernel="linear", C=0.025),
+        "Decision Tree" : DecisionTreeClassifier(),
+        "Random Forest" : RandomForestClassifier(max_features=None),
+        "Neural Net lbfgs" : MLPClassifier(solver="lbfgs", max_iter=5000, alpha=0.3),
+        "Neural Net adam" : MLPClassifier(solver="adam", max_iter=5000, alpha=0.3),
+        "Neural Net sgd" : MLPClassifier(solver="sgd", max_iter=5000, alpha=0.3),
+        "NN 2 hidden layers" : MLPClassifier(hidden_layer_sizes=(50, 50), solver="lbfgs", max_iter=5000, alpha=0.3),
+        "KNeighborsClassifier" : KNeighborsClassifier()
+}
 
 def plot_confusion_matrix(cm, classes,
                           normalize=False,
@@ -147,7 +90,7 @@ def plot_confusion_matrix(cm, classes,
     else:
         print('Confusion matrix, without normalization')
 
-    print(cm)
+    #print(cm)
 
     plt.imshow(cm, interpolation='nearest', cmap=cmap)
     plt.title(title)
@@ -178,7 +121,7 @@ def calc_cnf_matrix(classifier, name, X, y, X_test, y_test):
     plot_confusion_matrix(cnf_matrix, title=name, classes=clf.classes_, normalize=False)
 
 def calc_cross_vadil(classifier, name, X, y, cv):
-    score = cross_val_score(classifier, X, y, cv=cv)
+    score = cross_val_score(classifier, X, y, cv=cv, n_jobs=-1)
     print(name + ": " + str(np.average(score)) + " -> " +  str(score))
 
 def calc_score(classifier, name, X, y, X_test, y_test):
@@ -186,30 +129,8 @@ def calc_score(classifier, name, X, y, X_test, y_test):
     score = classifier.score(X_test, y_test)
     print(name + ": " + str(score))
 
-for name, clf in zip(names, classifiers):
-    calc_cnf_matrix(clf, name, X, y, X_test, y_test)
+for name in classifier_names:
+    #calc_cnf_matrix(clf, name, X, y, X_test, y_test)
     #calc_score(clf, name, X, y, X_test, y_test)
-    #calc_cross_vadil(clf, name, X, y, cv=5)
-
-    #clf.fit(X,y)
-    #score = cross_val_score(clf, X, y, cv=5)
-    #y_pred = clf.predict(X_test)
-    #print(y_test)
-    #cnf_matrix = confusion_matrix(y_test, y_pred)
-    #np.set_printoptions(precision=2)
-    #plt.figure()
-    #plot_confusion_matrix(cnf_matrix, title=name, classes=clf.classes_, normalize=True)
+    calc_cross_vadil(classifiers[name], name, feature_ext.X, y, cv=5)
 plt.show()
-
-    #score = clf.score(X_test, y_test)
-    #print(name + ": " + str(np.average(score)) + " -> " +  str(score))
-
-#count_right = 0
-#for f in test_data:
-#    #prediction = clf.predict([ get_freqs(path + test_data[0]) ])
-#    score = clf.score(X_test, y_test)
-#    print(score)
-#    #if prediction[0] == test_data[0][4]:
-#    #    count_right += 1
-#
-#print(count_right / len(test_data))
