@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import lex
 import itertools
 import feature_extractor
-
+import label_extractor
 import numpy as np
 
 from matplotlib.colors import ListedColormap
@@ -22,46 +22,15 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.discriminant_analysis import QuadraticDiscriminantAnalysis
 from sklearn.model_selection import cross_val_score
 from sklearn.metrics import confusion_matrix
-
-def get_freqs(full_filename_path):
-    source = open(full_filename_path, 'r').read()
-    ordered = OrderedDict(lex.get_freqs_from_cpp_source(source))
-    return list(ordered.values())
-
-def get_ngrams(full_filename_path, n):
-    source = open(full_filename_path, 'r').read()
-    tmp = lex.get_ngram(n, source)
-    ordered = OrderedDict(tmp)
-    return list(ordered.values())
-
-
-TRAINING_PART = 1.0
-
-#path = "spb-2017/"
-#path = "north-2015-runs/"
-path = "north-2011-runs/"
-
-feature_ext = feature_extractor.Word2VecExtractor(path_to_sources=path, training_part=TRAINING_PART, size=50)
-#feature_ext = feature_extractor.NgramExtractor(path_to_sources=path, training_part=TRAINING_PART, n=1,
-#                                               scale_features=False, variance_threshold=False)
-
-y = []
-
-for f in feature_ext.training_data:
-    y.append(f[4])
-
-y_test = []
-
-for f in feature_ext.test_data:
-    y_test.append(f[4])
+from sklearn.base import clone
 
 classifier_names = [ 
-      #"Linear SVM",
-      #"Decision Tree",
+      "Linear SVM",
+      "Decision Tree",
       "Random Forest",
       "Neural Net lbfgs",
-      #"Neural Net adam",
-      #"Neural Net sgd",
+      "Neural Net adam",
+      "Neural Net sgd",
       "KNeighborsClassifier",
       "NN 2 hidden layers", 
     ]
@@ -123,14 +92,69 @@ def calc_cnf_matrix(classifier, name, X, y, X_test, y_test):
 def calc_cross_vadil(classifier, name, X, y, cv):
     score = cross_val_score(classifier, X, y, cv=cv, n_jobs=-1)
     print(name + ": " + str(np.average(score)) + " -> " +  str(score))
+    return score
 
 def calc_score(classifier, name, X, y, X_test, y_test):
     classifier.fit(X, y)
     score = classifier.score(X_test, y_test)
-    print(name + ": " + str(score))
+    #print(name + ": " + str(score))
+    return score
 
-for name in classifier_names:
-    #calc_cnf_matrix(clf, name, X, y, X_test, y_test)
-    #calc_score(clf, name, X, y, X_test, y_test)
-    calc_cross_vadil(classifiers[name], name, feature_ext.X, y, cv=5)
+def get_freqs(full_filename_path):
+    source = open(full_filename_path, 'r').read()
+    ordered = OrderedDict(lex.get_freqs_from_cpp_source(source))
+    return list(ordered.values())
+
+def get_ngrams(full_filename_path, n):
+    source = open(full_filename_path, 'r').read()
+    tmp = lex.get_ngram(n, source)
+    ordered = OrderedDict(tmp)
+    return list(ordered.values())
+
+
+TRAINING_PART = 0.5
+
+#path = "spb-2017/"
+#path = "north-2015-runs/"
+path = "north-2011-runs/"
+#path = "neerc-2014-runs/"
+#path = "neerc-2016-runs/"
+
+#xml = "north-2011-log/log.xml"
+N = 10
+
+
+scores = np.zeros([len(classifier_names), N])
+print(scores)
+for i in range(N):
+    #feature_ext = feature_extractor.NgramExtractor(path_to_sources=path, training_part=TRAINING_PART, n=1,
+    #                                               scale_features=True, variance_threshold=False)
+    feature_ext = feature_extractor.Word2VecExtractor(path_to_sources=path, training_part=TRAINING_PART, size=50)
+
+    label_ext = label_extractor.ProblemExtractor()
+    #label_ext = label_extractor.VerdictExtractor(xml=xml)
+    y = label_ext.get_labels(feature_ext.training_data) #todo remove data into separate class from feature_extractor
+    y_test = label_ext.get_labels(feature_ext.test_data)
+    j = 0
+    for name in classifier_names:
+        clf = clone(classifiers[name])
+        #calc_cnf_matrix(clf, name, feature_ext.X, y, feature_ext.X_test, y_test)
+        score = calc_score(clf, name, feature_ext.X, y, feature_ext.X_test, y_test)
+        scores[j][i] = score
+        #calc_cross_vadil(clf, name, feature_ext.X, y, cv=5)
+        j += 1
+print(scores)
+means = scores.mean(1)
+std = scores.std(1)
+mins = scores.min(1)
+maxs = scores.max(1)
+#print(means)
+#print(std)
+#print(mins)
+#print(maxs)
+#print(len(scores))
+plt.errorbar(range(len(scores)), means, std, fmt='ok', lw=3)
+plt.errorbar(range(len(scores)), means, [means - mins, maxs - means],
+             fmt='.k', ecolor='gray', lw=1)
+plt.xticks(range(len(scores)), classifier_names, rotation=30)
 plt.show()

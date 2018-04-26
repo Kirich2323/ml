@@ -201,7 +201,7 @@ def get_freqs_from_cpp_source(source):
     return freqs
 
 def valid_token(tok):
-#    return (tok.type == 'IDENTIFIER' and tok.value in cpp_keywords) or tok.type == 'OPEN_CURLY' or tok.type == 'CLOSE_CURLY'
+    #return (tok.type == 'IDENTIFIER' and tok.value in cpp_keywords) or tok.type == 'OPEN_CURLY' or tok.type == 'CLOSE_CURLY'
     return tok.type == 'IDENTIFIER' or tok.type == 'OPEN_CURLY' or tok.type == 'CLOSE_CURLY' or tok.type == 'OPERATOR'
 
 def get_keywords(source):
@@ -213,8 +213,6 @@ def get_keywords(source):
         if valid_token(tok):
             ans.append(tok.value)
     return ans
-
-cpp_keyword_ngrams = {}
 
 def make_ngram_dict(n, ngram):
     if n == 0:
@@ -257,7 +255,8 @@ def get_ngram_list(source, n):
 def get_ngram(source, model, n):
     ngram_dict = dict.fromkeys(model, 0)
     for g in get_ngram_list(source, n):
-        ngram_dict[g] += 1
+        if g in ngram_dict:
+            ngram_dict[g] += 1
     return ngram_dict #todo: change
 
 
@@ -274,5 +273,5 @@ def get_word2vec_model(path, files, size): #todo: remove path
     data = []
     for f in files:
         data.append(get_keywords(open(path + f, 'r').read()))
-    print(data)
+    #print(data)
     return gensim.models.Word2Vec(data, size=size)
